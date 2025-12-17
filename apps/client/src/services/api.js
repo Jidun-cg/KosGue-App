@@ -17,6 +17,14 @@ export const getKosBySlug = async (slug) => {
   return response.json();
 };
 
+export const getMasterData = async () => {
+  const response = await fetch(`${BASE_URL}/kos/master-data`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch master data");
+  }
+  return response.json();
+};
+
 export const login = async (email, password) => {
   const response = await fetch(`${BASE_URL}/auth/login`, {
     method: "POST",

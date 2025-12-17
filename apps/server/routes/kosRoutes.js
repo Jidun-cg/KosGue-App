@@ -6,6 +6,7 @@ const adminMiddleware = require("../middleware/adminMiddleware");
 const ownerMiddleware = require("../middleware/ownerMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
+router.get("/master-data", kosController.getMasterData);
 router.get("/", kosController.getAllKos);
 router.get("/owner/my-kos", authenticateToken, kosController.getOwnerKos);
 router.get("/:slug", kosController.getKosBySlug);

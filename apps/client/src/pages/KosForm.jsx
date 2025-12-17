@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { createKos, getKosBySlug, updateKos } from "../services/api";
+import {
+  createKos,
+  getKosBySlug,
+  updateKos,
+  getMasterData,
+} from "../services/api";
 import { CITIES } from "../utils/constants";
 import { showSuccess, showError } from "../utils/sweetAlert";
 import { compressImage } from "../utils/imageCompression";
@@ -71,23 +76,37 @@ function KosForm() {
     width: "",
     length: "",
     capacity: "",
-    facilities: "",
-    services: "",
+    facilities: [], // Changed to array of IDs
+    services: [], // Changed to array of IDs
     owner_name: "",
     owner_phone: "",
     owner_whatsapp: "",
   });
 
+  const [masterData, setMasterData] = useState({
+    facilities: [],
+    services: [],
+  });
   const [newGalleryFiles, setNewGalleryFiles] = useState([]); // New files to upload
   const [position, setPosition] = useState(null);
   const [mapCenter, setMapCenter] = useState([-6.2, 106.816666]); // Default Jakarta
   const [isCompressing, setIsCompressing] = useState(false);
 
   useEffect(() => {
+    fetchMasterData();
     if (isEdit) {
       fetchData();
     }
   }, [slug]);
+
+  const fetchMasterData = async () => {
+    try {
+      const data = await getMasterData();
+      setMasterData(data);
+    } catch (error) {
+      console.error("Failed to fetch master data:", error);
+    }
+  };
 
   // Auto-generate slug from name
   useEffect(() => {
@@ -138,10 +157,10 @@ function KosForm() {
         capacity: capacity,
         facilities: data.facilities?.join(", ") || "",
         services: data.services?.join(", ") || "",
+        gallery: data.gallery || [],
         owner_name: data.owner?.name || "",
         owner_phone: data.owner?.phone || "",
         owner_whatsapp: data.owner?.whatsapp || "",
-        gallery: data.gallery || [],
       });
 
       if (data.latitude && data.longitude) {
@@ -154,6 +173,28 @@ function KosForm() {
       }
     } catch (error) {
       console.error("Error fetching kos:", error);
+    }
+  };
+
+  const handleCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const pos = { lat: latitude, lng: longitude };
+          setPosition(pos);
+          setMapCenter([latitude, longitude]);
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          showError(
+            "Gagal",
+            "Tidak dapat mengambil lokasi anda. Pastikan GPS aktif."
+          );
+        }
+      );
+    } else {
+      showError("Gagal", "Browser anda tidak mendukung geolokasi.");
     }
   };
 
@@ -234,6 +275,20 @@ function KosForm() {
     }
   };
 
+  const handleCheckboxChange = (e, type) => {
+    const { value, checked } = e.target;
+    const id = parseInt(value);
+
+    setFormData((prev) => {
+      const currentList = prev[type] || [];
+      if (checked) {
+        return { ...prev, [type]: [...currentList, id] };
+      } else {
+        return { ...prev, [type]: currentList.filter((item) => item !== id) };
+      }
+    });
+  };
+
   const removeGalleryItem = (index, isNew) => {
     if (isNew) {
       setNewGalleryFiles((prev) => prev.filter((_, i) => i !== index));
@@ -282,16 +337,13 @@ function KosForm() {
     // Append new files
     newGalleryFiles.forEach((file) => payload.append("gallery", file));
 
-    // Handle arrays
-    const facilitiesArray = formData.facilities
-      .split(",")
-      .map((item) => item.trim());
-    const servicesArray = formData.services
-      .split(",")
-      .map((item) => item.trim());
-
-    facilitiesArray.forEach((item) => payload.append("facilities[]", item));
-    servicesArray.forEach((item) => payload.append("services[]", item));
+    // Handle arrays (Send IDs)
+    if (formData.facilities && formData.facilities.length > 0) {
+      formData.facilities.forEach((id) => payload.append("facilities[]", id));
+    }
+    if (formData.services && formData.services.length > 0) {
+      formData.services.forEach((id) => payload.append("services[]", id));
+    }
 
     // Handle nested owner object
     payload.append("owner[name]", formData.owner_name);
@@ -428,9 +480,37 @@ function KosForm() {
 
             {/* Map Section */}
             <div className="col-span-2">
-              <label className="block text-sm font-bold text-[#1a1a1a]/70 uppercase tracking-wider mb-2">
-                Lokasi Peta (Klik untuk menandai)
-              </label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-bold text-[#1a1a1a]/70 uppercase tracking-wider">
+                  Lokasi Peta (Klik untuk menandai)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCurrentLocation}
+                  className="text-sm text-[#d4af37] hover:text-[#b3902a] font-medium flex items-center gap-1 transition-colors"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                  Gunakan Lokasi Saya
+                </button>
+              </div>
               <div className="h-64 w-full rounded-xl overflow-hidden border border-gray-200 z-0 relative">
                 <MapContainer
                   center={mapCenter}
@@ -694,31 +774,53 @@ function KosForm() {
           {/* Fasilitas & Layanan */}
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-bold text-[#1a1a1a]/70 uppercase tracking-wider mb-2">
-                Fasilitas (pisahkan dengan koma)
+              <label className="block text-sm font-bold text-[#1a1a1a]/70 uppercase tracking-wider mb-4">
+                Fasilitas
               </label>
-              <input
-                type="text"
-                name="facilities"
-                value={formData.facilities}
-                onChange={handleChange}
-                placeholder="AC, Wi-Fi, Kamar Mandi Dalam, Lemari"
-                className="w-full p-4 bg-[#fdfbf7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#d4af37]/20 focus:border-[#d4af37] outline-none transition-all text-[#1a1a1a] placeholder-gray-400 font-medium"
-              />
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {masterData.facilities.map((item) => (
+                  <label
+                    key={item.id}
+                    className="flex items-center space-x-3 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      value={item.id}
+                      checked={formData.facilities.includes(item.id)}
+                      onChange={(e) => handleCheckboxChange(e, "facilities")}
+                      className="w-5 h-5 text-[#d4af37] border-gray-300 rounded focus:ring-[#d4af37]"
+                    />
+                    <span className="text-gray-700 font-medium">
+                      {item.name}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div>
-              <label className="block text-sm font-bold text-[#1a1a1a]/70 uppercase tracking-wider mb-2">
-                Layanan (pisahkan dengan koma)
+              <label className="block text-sm font-bold text-[#1a1a1a]/70 uppercase tracking-wider mb-4">
+                Layanan Tambahan
               </label>
-              <input
-                type="text"
-                name="services"
-                value={formData.services}
-                onChange={handleChange}
-                placeholder="Laundry, Cleaning Service, Penjaga 24 Jam"
-                className="w-full p-4 bg-[#fdfbf7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#d4af37]/20 focus:border-[#d4af37] outline-none transition-all text-[#1a1a1a] placeholder-gray-400 font-medium"
-              />
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {masterData.services.map((item) => (
+                  <label
+                    key={item.id}
+                    className="flex items-center space-x-3 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      value={item.id}
+                      checked={formData.services.includes(item.id)}
+                      onChange={(e) => handleCheckboxChange(e, "services")}
+                      className="w-5 h-5 text-[#d4af37] border-gray-300 rounded focus:ring-[#d4af37]"
+                    />
+                    <span className="text-gray-700 font-medium">
+                      {item.name}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -726,7 +828,7 @@ function KosForm() {
           <div className="border-t border-gray-100 pt-8">
             <h3 className="text-xl font-serif font-bold text-[#1a1a1a] mb-6 flex items-center gap-2">
               <span className="w-8 h-1 bg-[#d4af37] rounded-full"></span>
-              Informasi Pemilik
+              Informasi Pemilik (Opsional)
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
@@ -738,6 +840,7 @@ function KosForm() {
                   name="owner_name"
                   value={formData.owner_name}
                   onChange={handleChange}
+                  placeholder="Kosongkan untuk pakai nama akun"
                   className="w-full p-4 bg-[#fdfbf7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#d4af37]/20 focus:border-[#d4af37] outline-none transition-all text-[#1a1a1a] placeholder-gray-400 font-medium"
                 />
               </div>
@@ -754,7 +857,7 @@ function KosForm() {
                   className="w-full p-4 bg-[#fdfbf7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#d4af37]/20 focus:border-[#d4af37] outline-none transition-all text-[#1a1a1a] placeholder-gray-400 font-medium"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Gunakan awalan 62 agar link WhatsApp berfungsi dengan baik.
+                  Gunakan awalan 62. Kosongkan untuk pakai no HP akun.
                 </p>
               </div>
               <div>
@@ -765,9 +868,8 @@ function KosForm() {
                   type="text"
                   name="owner_whatsapp"
                   value={formData.owner_whatsapp}
-                  onChange={handleChange}
-                  placeholder="https://wa.me/62..."
-                  className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#d4af37]/20 focus:border-[#d4af37] outline-none transition-all text-[#1a1a1a] placeholder-gray-400 font-medium"
+                  readOnly
+                  className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 font-medium cursor-not-allowed"
                 />
               </div>
             </div>

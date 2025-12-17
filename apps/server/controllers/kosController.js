@@ -208,6 +208,15 @@ const addReview = async (req, res) => {
   }
 };
 
+const getMasterData = async (req, res) => {
+  try {
+    const data = await kosService.getMasterData();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getAllKos,
   getOwnerKos,
@@ -216,4 +225,5 @@ module.exports = {
   updateKos,
   deleteKos,
   addReview,
+  getMasterData,
 };
